@@ -9,9 +9,5 @@ TrendRadar - 热点新闻聚合与分析工具
 
 from trendradar.context import AppContext
 
-<<<<<<< HEAD
-__version__ = "6.0.0"
-=======
 __version__ = "6.5.0"
->>>>>>> sync-branch
 __all__ = ["AppContext", "__version__"]
