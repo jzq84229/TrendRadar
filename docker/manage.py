@@ -10,11 +10,35 @@ import subprocess
 import time
 import signal
 from pathlib import Path
+<<<<<<< HEAD
+=======
+from datetime import datetime
+>>>>>>> sync-branch
 
 # Web 服务器配置
 WEBSERVER_PORT = int(os.environ.get("WEBSERVER_PORT", "8080"))
 WEBSERVER_DIR = "/app/output"
 WEBSERVER_PID_FILE = "/tmp/webserver.pid"
+<<<<<<< HEAD
+=======
+WEBSERVER_MANUAL_STOP_FILE = "/tmp/webserver.manual_stop"
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    """读取布尔环境变量，兼容 true/1/yes/on。"""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+WEBSERVER_AUTOFIX_LOG_HEALTHY = _env_bool("WEBSERVER_AUTOFIX_LOG_HEALTHY", False)
+
+
+def get_timestamp():
+    """获取当前时间戳字符串"""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+>>>>>>> sync-branch
 
 
 def run_command(cmd, shell=True, capture_output=True):
@@ -447,22 +471,154 @@ def restart_supercronic():
         print("  💡 建议重启容器: docker restart trendradar")
 
 
+<<<<<<< HEAD
 def start_webserver():
+=======
+def _read_proc_cmdline(pid: int) -> str:
+    """读取进程 cmdline，失败时返回空字符串。"""
+    proc_cmdline = Path(f"/proc/{pid}/cmdline")
+    if not proc_cmdline.exists():
+        return ""
+    try:
+        with open(proc_cmdline, "rb") as f:
+            return f.read().replace(b"\x00", b" ").decode("utf-8", errors="ignore").strip()
+    except Exception:
+        return ""
+
+
+def _is_expected_webserver_process(pid: int) -> bool:
+    """检查 pid 是否是当前端口的 http.server 进程。"""
+    cmdline = _read_proc_cmdline(pid)
+    if not cmdline:
+        return False
+    return "http.server" in cmdline and str(WEBSERVER_PORT) in cmdline
+
+
+def _is_manual_stop_requested() -> bool:
+    """是否处于手动停服状态。"""
+    return Path(WEBSERVER_MANUAL_STOP_FILE).exists()
+
+
+def _set_manual_stop_marker():
+    """写入手动停服标记，防止 watchdog 自动拉起。"""
+    try:
+        with open(WEBSERVER_MANUAL_STOP_FILE, "w", encoding="utf-8") as f:
+            f.write(get_timestamp())
+    except Exception:
+        pass
+
+
+def _clear_manual_stop_marker():
+    """清理手动停服标记。"""
+    try:
+        if Path(WEBSERVER_MANUAL_STOP_FILE).exists():
+            os.remove(WEBSERVER_MANUAL_STOP_FILE)
+    except Exception:
+        pass
+
+
+def _terminate_webserver_process(pid: int, require_expected: bool = True) -> bool:
+    """尝试终止 Web 服务器进程。
+
+    require_expected=True 时，仅终止确认是 http.server 的进程，避免误杀。
+    """
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return True
+
+    if require_expected and not _is_expected_webserver_process(pid):
+        print(f"  ⚠️ PID {pid} 存在但并非 Web 服务器进程，跳过终止")
+        return False
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+        time.sleep(0.5)
+        try:
+            os.kill(pid, 0)
+            os.kill(pid, signal.SIGKILL)
+            print(f"  ⚠️ 强制停止 Web 服务器 (PID: {pid})")
+        except OSError:
+            print(f"  ✅ Web 服务器已停止 (PID: {pid})")
+        return True
+    except OSError:
+        return True
+
+
+def _is_webserver_running(pid: int) -> bool:
+    """检查 Web 服务器进程是否真正在运行。"""
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+
+    if not _is_expected_webserver_process(pid):
+        return False
+
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"http://127.0.0.1:{WEBSERVER_PORT}/", method="HEAD")
+        urllib.request.urlopen(req, timeout=3)
+        return True
+    except Exception:
+        try:
+            time.sleep(1)
+            import urllib.request
+            req = urllib.request.Request(f"http://127.0.0.1:{WEBSERVER_PORT}/", method="HEAD")
+            urllib.request.urlopen(req, timeout=3)
+            return True
+        except Exception:
+            return False
+
+
+def _cleanup_stale_pid():
+    """清理失效的 PID 文件"""
+    if not Path(WEBSERVER_PID_FILE).exists():
+        return False
+
+    try:
+        with open(WEBSERVER_PID_FILE, 'r') as f:
+            old_pid = int(f.read().strip())
+        os.remove(WEBSERVER_PID_FILE)
+        print(f"  🧹 清理失效 PID 文件 (PID: {old_pid})")
+        return True
+    except Exception:
+        return False
+
+
+def start_webserver(force: bool = False):
+>>>>>>> sync-branch
     """启动 Web 服务器托管 output 目录"""
     print(f"🌐 启动 Web 服务器 (端口: {WEBSERVER_PORT})...")
     print(f"  🔒 安全提示：仅提供静态文件访问，限制在 {WEBSERVER_DIR} 目录")
 
+<<<<<<< HEAD
+=======
+    if force:
+        _clear_manual_stop_marker()
+    elif _is_manual_stop_requested():
+        print("  ℹ️ 检测到手动停服标记，跳过自动启动")
+        return
+
+>>>>>>> sync-branch
     # 检查是否已经运行
     if Path(WEBSERVER_PID_FILE).exists():
         try:
             with open(WEBSERVER_PID_FILE, 'r') as f:
                 old_pid = int(f.read().strip())
+<<<<<<< HEAD
             try:
                 os.kill(old_pid, 0)  # 检查进程是否存在
+=======
+
+            # 使用增强的进程检查
+            if _is_webserver_running(old_pid):
+>>>>>>> sync-branch
                 print(f"  ⚠️ Web 服务器已在运行 (PID: {old_pid})")
                 print(f"  💡 访问: http://localhost:{WEBSERVER_PORT}")
                 print("  💡 停止服务: python manage.py stop_webserver")
                 return
+<<<<<<< HEAD
             except OSError:
                 # 进程不存在，删除旧的 PID 文件
                 os.remove(WEBSERVER_PID_FILE)
@@ -472,6 +628,17 @@ def start_webserver():
                 os.remove(WEBSERVER_PID_FILE)
             except:
                 pass
+=======
+
+            # 进程异常时优先尝试终止旧进程，避免端口占用导致重启失败
+            _terminate_webserver_process(old_pid, require_expected=True)
+            _cleanup_stale_pid()
+            print(f"  ℹ️ 检测到失效的 PID 文件，已清理")
+
+        except Exception as e:
+            print(f"  ⚠️ 清理旧的 PID 文件: {e}")
+            _cleanup_stale_pid()
+>>>>>>> sync-branch
 
     # 检查目录是否存在
     if not Path(WEBSERVER_DIR).exists():
@@ -498,6 +665,7 @@ def start_webserver():
             # 保存 PID
             with open(WEBSERVER_PID_FILE, 'w') as f:
                 f.write(str(process.pid))
+            _clear_manual_stop_marker()
 
             print(f"  ✅ Web 服务器已启动 (PID: {process.pid})")
             print(f"  📁 服务目录: {WEBSERVER_DIR} (只读，仅静态文件)")
@@ -513,14 +681,23 @@ def start_webserver():
 def stop_webserver():
     """停止 Web 服务器"""
     print("🛑 停止 Web 服务器...")
+<<<<<<< HEAD
 
     if not Path(WEBSERVER_PID_FILE).exists():
         print("  ℹ️ Web 服务器未运行")
+=======
+    _set_manual_stop_marker()
+
+    if not Path(WEBSERVER_PID_FILE).exists():
+        print("  ℹ️ Web 服务器未运行")
+        print("  ℹ️ 已写入手动停服标记，watchdog 不会自动拉起")
+>>>>>>> sync-branch
         return
 
     try:
         with open(WEBSERVER_PID_FILE, 'r') as f:
             pid = int(f.read().strip())
+<<<<<<< HEAD
 
         try:
             # 尝试终止进程
@@ -543,6 +720,12 @@ def stop_webserver():
 
         # 删除 PID 文件
         os.remove(WEBSERVER_PID_FILE)
+=======
+        _terminate_webserver_process(pid, require_expected=True)
+        if Path(WEBSERVER_PID_FILE).exists():
+            os.remove(WEBSERVER_PID_FILE)
+        print("  ℹ️ 已写入手动停服标记，watchdog 不会自动拉起")
+>>>>>>> sync-branch
     except Exception as e:
         print(f"  ❌ 停止失败: {e}")
         # 尝试清理 PID 文件
@@ -558,6 +741,11 @@ def webserver_status():
 
     if not Path(WEBSERVER_PID_FILE).exists():
         print("  ⭕ 未运行")
+<<<<<<< HEAD
+=======
+        if _is_manual_stop_requested():
+            print("  ℹ️ 当前为手动停服状态，watchdog 不会自动拉起")
+>>>>>>> sync-branch
         print(f"  💡 启动服务: python manage.py start_webserver")
         return
 
@@ -565,21 +753,72 @@ def webserver_status():
         with open(WEBSERVER_PID_FILE, 'r') as f:
             pid = int(f.read().strip())
 
+<<<<<<< HEAD
         try:
             os.kill(pid, 0)  # 检查进程是否存在
+=======
+        # 使用增强的进程检查
+        if _is_webserver_running(pid):
+>>>>>>> sync-branch
             print(f"  ✅ 运行中 (PID: {pid})")
             print(f"  📁 服务目录: {WEBSERVER_DIR}")
             print(f"  🌐 访问地址: http://localhost:{WEBSERVER_PORT}")
             print(f"  📄 首页: http://localhost:{WEBSERVER_PORT}/index.html")
             print("  💡 停止服务: python manage.py stop_webserver")
+<<<<<<< HEAD
         except OSError:
             print(f"  ⭕ 未运行 (PID 文件存在但进程不存在)")
             os.remove(WEBSERVER_PID_FILE)
+=======
+        else:
+            print(f"  ⭕ 未运行 (PID 文件存在但进程不可用)")
+            _cleanup_stale_pid()
+>>>>>>> sync-branch
             print("  💡 启动服务: python manage.py start_webserver")
     except Exception as e:
         print(f"  ❌ 状态检查失败: {e}")
 
 
+<<<<<<< HEAD
+=======
+def webserver_autofix():
+    """Web 服务器健康检查和自动修复
+
+    供 watchdog/定时任务调用，检查服务状态并在需要时自动重启。
+    输出日志格式便于外部监控系统解析。
+    """
+    if _is_manual_stop_requested():
+        if WEBSERVER_AUTOFIX_LOG_HEALTHY:
+            print(f"[{get_timestamp()}] ℹ️ 手动停服状态，跳过自动修复")
+        return
+
+    if not Path(WEBSERVER_PID_FILE).exists():
+        print(f"[{get_timestamp()}] ℹ️ Web 服务器未运行，启动中...")
+        start_webserver(force=False)
+        return
+
+    try:
+        with open(WEBSERVER_PID_FILE, 'r') as f:
+            pid = int(f.read().strip())
+
+        # 使用增强检查
+        if not _is_webserver_running(pid):
+            print(f"[{get_timestamp()}] ⚠️ Web 服务器不可用 (PID: {pid})，尝试重启...")
+            _terminate_webserver_process(pid, require_expected=True)
+            _cleanup_stale_pid()
+            start_webserver(force=False)
+            return
+
+        if WEBSERVER_AUTOFIX_LOG_HEALTHY:
+            print(f"[{get_timestamp()}] ✅ Web 服务器健康 (PID: {pid})")
+
+    except Exception as e:
+        print(f"[{get_timestamp()}] ❌ 健康检查异常: {e}")
+        _cleanup_stale_pid()
+        start_webserver(force=False)
+
+
+>>>>>>> sync-branch
 def show_help():
     """显示帮助信息"""
     help_text = """
@@ -630,7 +869,11 @@ def show_help():
 
   5. Web 服务器管理:
      - 启动: start_webserver
+<<<<<<< HEAD
      - 停止: stop_webserver
+=======
+     - 停止: stop_webserver（写入手动停服标记，watchdog 不自动拉起）
+>>>>>>> sync-branch
      - 状态: webserver_status
      - 访问: http://localhost:8080
 """
@@ -650,9 +893,16 @@ def main():
         "files": show_files,
         "logs": show_logs,
         "restart": restart_supercronic,
+<<<<<<< HEAD
         "start_webserver": start_webserver,
         "stop_webserver": stop_webserver,
         "webserver_status": webserver_status,
+=======
+        "start_webserver": lambda: start_webserver(force=True),
+        "stop_webserver": stop_webserver,
+        "webserver_status": webserver_status,
+        "webserver_autofix": webserver_autofix,
+>>>>>>> sync-branch
         "help": show_help,
     }
 
@@ -669,4 +919,8 @@ def main():
 
 
 if __name__ == "__main__":
+<<<<<<< HEAD
     main()
+=======
+    main()
+>>>>>>> sync-branch
